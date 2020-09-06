@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <string>
+#include <vector>
 #include <opencv2/opencv.hpp>
 
 using namespace cv;
@@ -13,16 +14,18 @@ Java_com_example_opencvjniexample_MainActivity_stringFromJNI(
     return env->NewStringUTF(hello.c_str());
 }
 extern "C"
-JNIEXPORT void JNICALL
+JNIEXPORT jobjectArray JNICALL
 Java_com_example_opencvjniexample_MainActivity_detectPlaylistJNI(JNIEnv *env, jobject thiz,
-                                                                 jlong addr_mat, jlong dst_mat) {
+                                                                 jstring path, jlong dst_mat) {   // jlong addr_mat
     // TODO: implement detectPlaylistJNI()
 
-    const float LIMIT_PX = 1024;
+    jboolean isCopy;
+    const char *imagePath = (env)->GetStringUTFChars(path, &isCopy);
 
-    Mat &src = *(Mat *) addr_mat;
+//    Mat &src = *(Mat *) addr_mat;
     Mat &gray = *(Mat *) dst_mat;
-//    cvtColor(src, gray, COLOR_BGRA2GRAY);
+    Mat src = imread(imagePath, IMREAD_COLOR);
+    cvtColor(src, gray, COLOR_BGRA2GRAY);
 
     int height = src.rows;
     int width = src.cols;
@@ -99,22 +102,6 @@ Java_com_example_opencvjniexample_MainActivity_detectPlaylistJNI(JNIEnv *env, jo
     Mat mask;
     inRange(src_hsv, mode, mode, mask);
 
-    // --- 자르기 ---
-
-    if (mask.at<uchar>(half, 0) == 0) {
-        uchar* p = mask.ptr<uchar>(half);
-        for (int i = 0; i < width; i++) {
-            if (p[i] == 255) {
-                Rect roi(i + 2, 0, width - (i + 2), height);
-                mask = mask(roi);
-                Mat resized = Mat(height, width, CV_8UC1, Scalar(255));
-                mask.copyTo(resized(Rect(0, 0, mask.cols, mask.rows)));
-                mask = resized.clone();
-                break;
-            }
-        }
-    }
-
     // --- morphology: 팽창 후 침식 ---
 
     morphologyEx(mask, mask, MORPH_CLOSE, kernel);
@@ -122,5 +109,98 @@ Java_com_example_opencvjniexample_MainActivity_detectPlaylistJNI(JNIEnv *env, jo
     // --- Edge Detection ---
 
     Mat edge;
-    Canny(mask, gray, 50, 150, 3);
+    Canny(mask, edge, 50, 150, 3);
+
+    // --- Find Rectangle ---
+
+    vector<Vec2f> lines;
+    HoughLines(edge, lines, 1, CV_PI / 180, 100); // 250
+
+    cvtColor(gray, gray, COLOR_GRAY2BGR);
+
+    vector<int> temp_x;
+
+    for (size_t i = 0; i < lines.size(); i++) {
+        float rho = lines[i][0], theta = lines[i][1];
+        if (theta == 0.0) {
+            float cos_t = cos(theta), sin_t = sin(theta);
+            float x0 = rho * cos_t, y0 = rho * sin_t;
+            float alpha = 1000;
+
+            temp_x.push_back(cvRound(x0 - alpha * sin_t));
+
+            Point pt1(cvRound(x0 - alpha * sin_t), cvRound(y0 + alpha * cos_t));
+            Point pt2(cvRound(x0 + alpha * sin_t), cvRound(y0 - alpha * cos_t));
+            line(gray, pt1, pt2, (0, 0, 255), 2, LINE_AA);
+            putText(gray, to_string(theta), Point(x0, y0), FONT_HERSHEY_PLAIN, 1, Scalar(0, 0, 255));
+        }
+    }
+
+    sort(temp_x.begin(), temp_x.end());
+    int album_w = temp_x[1] - temp_x[0];
+
+    // --- Find Contours ---
+
+    vector<vector<Point>> contours;
+    findContours(edge, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+/*
+  Mat dst = src.clone();
+
+  Scalar c(255, 0, 0);
+
+  for (int i = 0; i < contours.size(); i++) {
+    drawContours(dst, contours, i, c, 2);
+  }
+*/
+
+/*
+    Scalar c(255, 0, 0);
+
+    for (int i = 0; i < contours.size(); i++) {
+        drawContours(gray, contours, i, c, 2);
+    }
+*/
+    int cnt = 0;
+
+    vector<Mat> mats;
+
+    for (vector<Point> pts : contours) {
+        Rect rc = boundingRect(pts);
+        double x = rc.x;
+        double y = rc.y;
+        double w = rc.width;
+        double h = rc.height;
+/*
+        rectangle(gray, rc, Scalar(0, 0, 255), 1);
+        putText(gray, to_string(w * h), Point(x, y), FONT_HERSHEY_PLAIN, 1, Scalar(0, 0, 255));
+*/
+        if (x > temp_x[0] - 3 && x < temp_x[1] + 3 && h > album_w - 3) {
+//        if (w / h > 0.8 && w / h < 1.2 && w * h > 300) {
+            cnt++;
+            rectangle(gray, rc, Scalar(0, 0, 255), 1);
+            // album image
+            Mat abm = src(Range(y, y + h), Range(x, x + w));
+            cvtColor(abm, abm, COLOR_BGR2RGB);
+            mats.push_back(abm);
+            // ocr image
+            Mat roi = src(Range(y, y + h), Range(x + w, width));
+            cvtColor(roi, roi, COLOR_BGR2RGB);
+            mats.push_back(roi);
+        }
+    }
+
+    // for ArrayList return
+    jclass matClass = env->FindClass("org/opencv/core/Mat");
+    jmethodID jMatCons = env->GetMethodID(matClass, "<init>", "()V");
+    jmethodID getPtrMethod = env->GetMethodID(matClass, "getNativeObjAddr", "()J");
+    jobjectArray matArray = env->NewObjectArray(cnt * 2, matClass, 0);
+
+    for (int i = 0; i < mats.size(); ++i) {
+        jobject jMat = env->NewObject(matClass, jMatCons);
+        Mat& tempMat = *(Mat*)env->CallLongMethod(jMat, getPtrMethod);
+        tempMat = mats[i];
+        env->SetObjectArrayElement(matArray, i, jMat);
+    }
+
+    return matArray;
 }

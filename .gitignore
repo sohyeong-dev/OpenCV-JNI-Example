@@ -13,3 +13,4 @@
 .externalNativeBuild
 .cxx
 MainActivity.java
+secrets.properties

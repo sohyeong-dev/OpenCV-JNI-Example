@@ -17,12 +17,18 @@ android {
                 cppFlags ""
             }
         }
+
+        manifestPlaceholders = [ KAKAO_OCR_REST_API_KEY:getApiKey() ]
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+
+        applicationVariants.all { variant ->
+            variant.buildConfigField "String", "KAKAO_OCR_REST_API_KEY", "\"" + getApiKey() + "\""
         }
     }
     externalNativeBuild {
@@ -42,4 +48,10 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
 
+}
+
+def getApiKey() {
+    def Properties props = new Properties()
+    props.load(new FileInputStream(new File('secrets.properties')))
+    return props['KAKAO_OCR_REST_API_KEY']
 }

@@ -3,6 +3,8 @@
     package="com.example.opencvjniexample">
 
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
 
     <application
         android:allowBackup="true"
@@ -20,6 +22,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <meta-data
+            android:name="com.kakao.vision.REST_API_KEY"
+            android:value="${KAKAO_OCR_REST_API_KEY}" />
     </application>
 
 </manifest>

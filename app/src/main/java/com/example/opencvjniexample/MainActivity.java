@@ -24,10 +24,13 @@ import org.opencv.core.Mat;
 
 import org.opencv.android.OpenCVLoader;
 
+import java.lang.reflect.Array;
+import java.util.ArrayList;
+
 public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSIONS_REQUEST_CODE = 100;
-    private static final String[] PERMISSIONS = { Manifest.permission.READ_EXTERNAL_STORAGE };
+    private static final String[] PERMISSIONS = { Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE };
 
     private static final String TAG = "OpenCV JNI Example";
     private static final int REQ_CODE_SELECT_IMAGE = 200;
@@ -47,6 +50,10 @@ public class MainActivity extends AppCompatActivity {
 
     private ImageView imageView;
     private Bitmap bitmap;
+
+    ArrayList<Mat> cropedList;
+    ArrayList<Mat> albumimages;
+    ArrayList<Mat> ocrimages;
 
     @Override
     protected void onDestroy() {
@@ -74,6 +81,10 @@ public class MainActivity extends AppCompatActivity {
         tv.setText(stringFromJNI());
 
         imageView = (ImageView) findViewById(R.id.imageView);
+
+        cropedList = new ArrayList<Mat>();
+        albumimages = new ArrayList<Mat>();
+        ocrimages = new ArrayList<Mat>();
     }
 
     private boolean hasPermissions(String[] permissions) {
@@ -95,7 +106,7 @@ public class MainActivity extends AppCompatActivity {
      * which is packaged with this application.
      */
     public native String stringFromJNI();
-    public native void detectPlaylistJNI(long addrMat, long dstMat);
+    public native Mat[] detectPlaylistJNI(String imagePath, long dstMat);   // long addrMat
 
     public void onButtonClicked(View view) {
         Intent intent = new Intent(Intent.ACTION_PICK);
@@ -112,14 +123,14 @@ public class MainActivity extends AppCompatActivity {
             if (resultCode == RESULT_OK) {
                 try {
                     String path = getImagePathFromURI(data.getData());
+                    Log.d(TAG, "onActivityResult: " + path);
 
                     BitmapFactory.Options options = new BitmapFactory.Options();
                     options.inSampleSize = 4;
                     bitmap = BitmapFactory.decodeFile(path, options);
 
                     if (bitmap != null) {
-                        detectPlaylist();
-                        imageView.setImageBitmap(bitmap);
+                        detectPlaylist(path);
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -128,13 +139,41 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void detectPlaylist() {
+    private void detectPlaylist(String path) {
         Mat src = new Mat();
         Utils.bitmapToMat(bitmap, src);
         Mat gray = new Mat();
-        detectPlaylistJNI(src.getNativeObjAddr(), gray.getNativeObjAddr());
-        Utils.matToBitmap(gray, bitmap);
-        imageView.setImageBitmap(bitmap);
+        Mat[] tempMatArray = detectPlaylistJNI(path, gray.getNativeObjAddr());    // src.getNativeObjAddr()
+        Log.d(TAG, "detectPlaylist: " + tempMatArray.length);
+        for (Mat tempMat: tempMatArray) {
+            cropedList.add(tempMat);
+        }
+        Log.d(TAG, "detectPlaylist: 곡의 개수는? " + cropedList.size() / 2);
+        for (int i = 0; i < cropedList.size(); i += 2) {
+            albumimages.add(cropedList.get(i));
+            ocrimages.add(cropedList.get(i + 1));
+        }
+//        Utils.matToBitmap(gray, bitmap);
+//        imageView.setImageBitmap(bitmap);
+
+        // --- OCR ---
+
+        ArrayList<Bitmap> ocrBitmapImages = new ArrayList<Bitmap>();
+        // Mat to Bitmap
+        Bitmap bmp = null;
+        for (Mat ocrimage: ocrimages) {
+            bmp = Bitmap.createBitmap(ocrimage.cols(), ocrimage.rows(), Bitmap.Config.RGB_565);
+            Utils.matToBitmap(ocrimage, bmp);
+            ocrBitmapImages.add(bmp);
+        }
+
+        OcrApi ocrApi = new OcrApi(this, ocrBitmapImages);
+
+        ArrayList<String> ocrResult = ocrApi.recognizing();
+        Log.d(TAG, "detectPlaylist: " + ocrResult.size());
+        for (String keyword: ocrResult) {
+            Log.d(TAG, "detectPlaylist: " + keyword);
+        }
     }
 
     private String getImagePathFromURI(Uri data) {
