@@ -36,7 +36,7 @@ public class OcrApi {
     ArrayList<Bitmap> bitmapImages;
     ArrayList<String> imagePaths;
 
-    private static final int LIMIT_BOX = 40;
+    private static final String SEPARATOR = "///";
 
     public OcrApi(Context context, ArrayList<Bitmap> bitmaps) {
         this.context = context;
@@ -125,11 +125,83 @@ public class OcrApi {
             int count = strings.length;
 
             String imagePath = strings[0];
+            File file = new File(imagePath);
 
+            String API_URL = "https://dapi.kakao.com/v2/vision/text/ocr";
+
+            String output = internetConnect(API_URL, file, null);
+
+            JSONObject outputJsonObject = null;
+            try {
+                outputJsonObject = new JSONObject(output);
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+            // 추출한 문자 영역과 텍스트 정보
+            JSONArray resultArray = null;
+            try {
+                resultArray = outputJsonObject.getJSONArray("result");
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+            // System.out.println(resultArray.toString());
+            int top_y = 0;
+            int bottom_y = 0;
+            String keyword = "";
+            String words = "";
+            for (int jsonArrayIdx = 0; jsonArrayIdx < resultArray.length(); jsonArrayIdx++) {
+                JSONObject infoJsonObject = null;
+                try {
+                    infoJsonObject = (JSONObject) resultArray.get(jsonArrayIdx);
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+                // 추출한 문자 영역에 대한 x와 y 좌표
+                JSONArray boxes = null;
+                try {
+                    boxes = infoJsonObject.getJSONArray("boxes");
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+                // System.out.println(boxes.toString());
+                JSONArray top = null;
+                try {
+                    top = (JSONArray) boxes.get(0);
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+                // System.out.println(top.get(1));
+                try {
+                    if ((int) top.get(1) > bottom_y) {
+                        if (keyword != "") {
+                            System.out.println(keyword);
+//                            System.out.println(preProcessing(keyword));
+                            words += keyword + SEPARATOR;
+                        }
+                        // System.out.println("get");
+                        JSONArray bottom = (JSONArray) boxes.get(2);
+                        top_y = (int) top.get(1);
+                        bottom_y = (int) bottom.get(1);
+
+                        // 문자 영역에 있는 문자를 텍스트로 변경한 결과 값
+                        JSONArray keywordJsonArray = infoJsonObject.getJSONArray("recognition_words");
+                        keyword = keywordJsonArray.get(0).toString();
+                    } else if ((int) top.get(1) > top_y - 3 && (int) top.get(1) < top_y + 3) {    // 한 줄이라고 판단
+                        JSONArray keywordJsonArray = infoJsonObject.getJSONArray("recognition_words");
+                        keyword += " " + keywordJsonArray.get(0).toString();
+                    }
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+            }
+            if (keyword != "") {
+                System.out.println(keyword);
+//                System.out.println(preProcessing(keyword));
+                words += keyword + SEPARATOR;
+            }
+/*
             String detectURL = "https://kapi.kakao.com/v1/vision/text/detect";
             String recognizeURL = "https://kapi.kakao.com/v1/vision/text/recognize";
-
-            File file = new File(imagePath);
 
             String returnString = internetConnect(detectURL, file, null);
 
@@ -156,8 +228,8 @@ public class OcrApi {
             } catch (JSONException e) {
                 e.printStackTrace();
             }
-
-            return words;
+*/
+            return words.substring(0, words.lastIndexOf(SEPARATOR));
         }
 
         private String internetConnect(String apiURL, File file, String postParams) {
@@ -254,7 +326,7 @@ public class OcrApi {
                 }
                 StringBuilder fileString = new StringBuilder();
                 fileString
-                        .append("Content-Disposition:form-data; name=\"file\"; filename=");
+                        .append("Content-Disposition:form-data; name=\"image\"; filename=");
                 fileString.append("\"" + file.getName() + "\"\r\n");
                 fileString.append("Content-Type: application/octet-stream\r\n\r\n");
                 try {
