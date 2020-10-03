@@ -29,7 +29,7 @@ Java_com_example_opencvjniexample_MainActivity_detectPlaylistJNI(JNIEnv *env, jo
 
     int height = src.rows;
     int width = src.cols;
-
+/*
     // --- color_equalize ---
 
     Mat src_ycrcb;
@@ -54,11 +54,11 @@ Java_com_example_opencvjniexample_MainActivity_detectPlaylistJNI(JNIEnv *env, jo
 
     Mat blurred;
     medianBlur(equalize, blurred, 7);
-
+*/
     // --- inrange_hue ---
 
     Mat src_hsv;
-    cvtColor(blurred, src_hsv, COLOR_BGR2HSV);
+    cvtColor(src, src_hsv, COLOR_BGR2HSV);
 
     vector<Mat> hsv_planes;
     split(src_hsv, hsv_planes);
@@ -104,6 +104,7 @@ Java_com_example_opencvjniexample_MainActivity_detectPlaylistJNI(JNIEnv *env, jo
 
     // --- morphology: 팽창 후 침식 ---
 
+    Mat kernel = Mat::ones(5, 5, CV_8UC1);  // unsigned char, 1-channel
     morphologyEx(mask, mask, MORPH_CLOSE, kernel);
 
     // --- Edge Detection ---
@@ -114,14 +115,14 @@ Java_com_example_opencvjniexample_MainActivity_detectPlaylistJNI(JNIEnv *env, jo
     // --- Find Rectangle ---
 
     vector<Vec2f> lines;
-    HoughLines(edge, lines, 1, CV_PI / 180, 100); // 250
+    HoughLines(edge, lines, 1, CV_PI / 180, 180); // 250
 
     cvtColor(gray, gray, COLOR_GRAY2BGR);
 
     vector<int> temp_x;
 
-    for (size_t i = 0; i < lines.size(); i++) {
-        float rho = lines[i][0], theta = lines[i][1];
+    for (Vec2f li: lines) {
+        float rho = li[0], theta = li[1];
         if (theta == 0.0) {
             float cos_t = cos(theta), sin_t = sin(theta);
             float x0 = rho * cos_t, y0 = rho * sin_t;
@@ -164,12 +165,12 @@ Java_com_example_opencvjniexample_MainActivity_detectPlaylistJNI(JNIEnv *env, jo
 
     vector<Mat> mats;
 
-    for (vector<Point> pts : contours) {
+    for (const auto& pts : contours) {
         Rect rc = boundingRect(pts);
-        double x = rc.x;
-        double y = rc.y;
-        double w = rc.width;
-        double h = rc.height;
+        int x = rc.x;
+        int y = rc.y;
+        int w = rc.width;
+        int h = rc.height;
 /*
         rectangle(gray, rc, Scalar(0, 0, 255), 1);
         putText(gray, to_string(w * h), Point(x, y), FONT_HERSHEY_PLAIN, 1, Scalar(0, 0, 255));
